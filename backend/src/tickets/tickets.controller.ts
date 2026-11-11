@@ -30,6 +30,11 @@ export class TicketsController {
     return this.ticketsService.reply(+id, body.message ?? '');
   }
 
+  @Post(':id/suggest')
+  suggest(@Param('id') id: string) {
+    return this.ticketsService.suggest(+id);
+  }
+
   @Get()
   findAll() {
     return this.ticketsService.findAll();
