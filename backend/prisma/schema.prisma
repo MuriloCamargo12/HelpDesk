@@ -1,0 +1,49 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+
+enum TicketStatus {
+  NOVO
+  COM_IA
+  NA_FILA
+  EM_ATENDIMENTO
+  AGUARDANDO_CLIENTE
+  RESOLVIDO
+}
+
+model Ticket {
+  id Int @id @default(autoincrement())
+  subject String
+  status TicketStatus @default(NOVO)
+  createdAt DateTime @default(now())
+  messages Message[]
+}
+
+model Message {
+  id Int @id @default(autoincrement())
+  body String @db.Text
+  author String
+  createdAt DateTime @default(now())
+  ticket Ticket @relation(fields: [ticketId], references: [id])
+  ticketId Int
+}
+
+
+model Article {
+  id Int @id @default(autoincrement())
+  title String
+  body String @db.Text
+  published Boolean @default(true)
+  createdAt DateTime @default(now())
+}
