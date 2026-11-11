@@ -205,6 +205,17 @@ export function Desk() {
     });
   }
 
+  function suggest() {
+    if (!selected || busy) return;
+    void run(async () => {
+      const result = await api<{ draft: string }>(
+        `/tickets/${selected.id}/suggest`,
+        { method: "POST" },
+      );
+      setDraft(result.draft);
+    });
+  }
+
   function openTicket(event: FormEvent) {
     event.preventDefault();
     const nextSubject = subject.trim();
@@ -410,6 +421,7 @@ export function Desk() {
               error={error}
               onDraft={setDraft}
               onReply={sendReply}
+              onSuggest={suggest}
               onAssume={assume}
               onResolve={resolve}
             />
@@ -434,6 +446,7 @@ function DeskAction({
   error,
   onDraft,
   onReply,
+  onSuggest,
   onAssume,
   onResolve,
 }: {
@@ -443,6 +456,7 @@ function DeskAction({
   error: string;
   onDraft: (value: string) => void;
   onReply: (event: FormEvent) => void;
+  onSuggest: () => void;
   onAssume: () => void;
   onResolve: () => void;
 }) {
@@ -488,6 +502,14 @@ function DeskAction({
             rows={2}
             className="max-h-28 min-h-12 flex-1 resize-none bg-transparent text-[15px] leading-6 outline-none placeholder:text-[#b7ad9f]"
           />
+          <button
+            type="button"
+            onClick={onSuggest}
+            disabled={busy}
+            className="mb-0.5 shrink-0 text-sm text-muted disabled:opacity-50"
+          >
+            Sugerir
+          </button>
           <button
             type="button"
             onClick={onResolve}
