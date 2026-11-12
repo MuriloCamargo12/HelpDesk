@@ -34,7 +34,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function ArticlesColumn() {
+export function ArticlesColumn({ shown = true }: { shown?: boolean }) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -101,29 +101,31 @@ export function ArticlesColumn() {
   }
 
   return (
-    <aside className="flex min-h-0 flex-col border-l border-line bg-paper">
-      <header className="border-b border-line px-4 py-5">
-        <h2 className="font-serif text-[22px] leading-none">Base</h2>
+    <aside
+      className={`${shown ? "flex" : "hidden"} h-full min-h-0 min-w-0 w-full flex-col overflow-hidden bg-paper lg:flex lg:border-l lg:border-line`}
+    >
+      <header className="flex min-h-28 shrink-0 flex-col justify-center border-b border-line px-4 py-3">
+        <h2 className="font-serif text-[26px] leading-none">Base</h2>
         <p className="mt-2 text-[13px] text-muted">
           A IA só lê o que estiver publicado.
         </p>
       </header>
 
-      <ul className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <ul className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {articles.length === 0 ? (
           <li className="px-1 py-3 text-sm text-muted">Nenhum artigo ainda.</li>
         ) : (
           articles.map((article) => (
             <li key={article.id} className="border-b border-line px-1 py-3">
-              <p className="text-[15px]">{article.title}</p>
-              <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-muted">
+              <p className="break-words text-[15px]">{article.title}</p>
+              <p className="mt-1 line-clamp-2 break-words text-[13px] leading-5 text-muted">
                 {article.body}
               </p>
               <button
                 type="button"
                 onClick={() => toggle(article)}
                 disabled={busy}
-                className="mt-2 text-[13px] text-ink disabled:opacity-50"
+                className="mt-2 rounded-md px-1 py-0.5 text-[13px] text-ink transition-colors hover:bg-[#f3efe7] disabled:opacity-50"
               >
                 {article.published ? "Despublicar" : "Republicar"}
               </button>
@@ -134,29 +136,33 @@ export function ArticlesColumn() {
 
       <form
         onSubmit={createArticle}
-        className="border-t border-line bg-[#ebe4d8] px-3 py-3"
+        className="shrink-0 border-t border-line bg-[#ebe4d8] px-4 py-3"
       >
-        {error ? <p className="mb-2 text-sm text-mark">{error}</p> : null}
+        {error ? (
+          <p className="mb-2 break-words text-sm text-mark">{error}</p>
+        ) : null}
         <input
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           placeholder="Título"
-          className="w-full rounded-md border border-[#cfc4b2] bg-white px-3 py-2 text-sm outline-none"
+          className="w-full rounded-md border border-[#cfc4b2] bg-white px-3 py-2 text-sm outline-none transition-colors hover:border-[#b7ad9f] focus:border-ink"
         />
         <textarea
           value={body}
           onChange={(event) => setBody(event.target.value)}
           placeholder="Texto do artigo"
           rows={3}
-          className="mt-2 w-full resize-none rounded-md border border-[#cfc4b2] bg-white px-3 py-2 text-sm outline-none"
+          className="mt-2 w-full resize-none rounded-md border border-[#cfc4b2] bg-white px-3 py-2 text-sm outline-none transition-colors hover:border-[#b7ad9f] focus:border-ink"
         />
-        <button
-          type="submit"
-          disabled={busy}
-          className="mt-2 rounded-md bg-ink px-3 py-1.5 text-sm text-paper disabled:opacity-50"
-        >
-          Guardar artigo
-        </button>
+        <div className="mt-2 flex justify-end">
+          <button
+            type="submit"
+            disabled={busy}
+            className="max-w-full rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
+          >
+            Guardar artigo
+          </button>
+        </div>
       </form>
     </aside>
   );

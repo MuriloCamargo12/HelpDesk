@@ -50,7 +50,7 @@ function StatusMark({ status }: { status: Status }) {
   const tone = statusTone[status];
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] ${tone.chip}`}
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] ${tone.chip}`}
     >
       <span className={`size-1.5 rounded-full ${tone.dot}`} />
       {statusLabel[status]}
@@ -123,6 +123,7 @@ export function Desk() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [pane, setPane] = useState<"fila" | "chamado" | "base">("fila");
 
   useEffect(() => {
     let cancelled = false;
@@ -158,6 +159,7 @@ export function Desk() {
     setComposing(false);
     setDraft("");
     setError("");
+    setPane("chamado");
   }
 
   function replace(ticket: Ticket) {
@@ -256,39 +258,69 @@ export function Desk() {
     });
   }
 
-  return (
-    <div className="grid h-screen grid-cols-[300px_1fr_320px] bg-paper text-ink">
-      <aside className="flex min-h-0 flex-col bg-rail text-rail-ink">
-        <div className="flex items-center justify-between px-4 pb-3 pt-5">
-          <h1 className="font-serif text-[26px] leading-none">HelpDesk</h1>
-          <button
-            type="button"
-            onClick={() => {
-              setComposing(true);
-              setDraft("");
-              setError("");
-            }}
-            className="rounded-md bg-[#efe8dc] px-2.5 py-1 text-[13px] text-ink hover:bg-white"
-          >
-            Novo
-          </button>
-        </div>
+  const panes = [
+    ["fila", "Fila"],
+    ["chamado", "Chamado"],
+    ["base", "Base"],
+  ] as const;
 
-        <div className="flex gap-1 px-3 pb-3 text-[13px]">
-          {filters.map((item) => (
+  return (
+    <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-paper text-ink">
+      <nav className="grid shrink-0 grid-cols-3 gap-1 bg-rail p-2 lg:hidden">
+        {panes.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setPane(id)}
+            className={
+              pane === id
+                ? "rounded-md bg-[#efe8dc] px-2 py-1.5 text-[13px] text-ink"
+                : "rounded-md px-2 py-1.5 text-[13px] text-[#c8bfb2] transition-colors hover:bg-[#31423a] hover:text-rail-ink"
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+      <div className="grid min-h-0 w-full min-w-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[300px_minmax(0,1fr)_minmax(240px,320px)]">
+      <aside
+        className={`${pane === "fila" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-hidden bg-rail text-rail-ink lg:flex`}
+      >
+        <div className="flex min-h-28 shrink-0 flex-col justify-center border-b border-white/10 px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="min-w-0 truncate font-serif text-[26px] leading-none">
+              HelpDesk
+            </h1>
             <button
-              key={item}
               type="button"
-              onClick={() => setFilter(item)}
-              className={
-                item === filter
-                  ? "rounded-md bg-[#efe8dc] px-2 py-1 text-ink"
-                  : "rounded-md px-2 py-1 text-[#c8bfb2] hover:text-rail-ink"
-              }
+              onClick={() => {
+                setComposing(true);
+                setDraft("");
+                setError("");
+                setPane("chamado");
+              }}
+              className="shrink-0 rounded-md bg-[#efe8dc] px-2.5 py-1 text-[13px] text-ink transition-colors hover:bg-white"
             >
-              {item}
+              Novo
             </button>
-          ))}
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-1 text-[13px]">
+            {filters.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setFilter(item)}
+                className={
+                  item === filter
+                    ? "rounded-md bg-[#efe8dc] px-1.5 py-1 text-ink transition-colors hover:bg-white"
+                    : "rounded-md px-1.5 py-1 text-[#c8bfb2] transition-colors hover:bg-[#31423a] hover:text-rail-ink"
+                }
+              >
+                {item}
+              </button>
+            ))}
+          </div>
         </div>
 
         <ul className="min-h-0 flex-1 overflow-y-auto">
@@ -308,7 +340,7 @@ export function Desk() {
                   <button
                     type="button"
                     onClick={() => select(ticket.id)}
-                    className={`block w-full rounded-md px-3 py-2.5 text-left ${
+                    className={`block w-full min-w-0 overflow-hidden rounded-md px-3 py-2.5 text-left ${
                       active ? "bg-[#31423a]" : "hover:bg-[#2b3a33]"
                     }`}
                   >
@@ -332,46 +364,50 @@ export function Desk() {
         </ul>
       </aside>
 
-      <main className="flex min-h-0 flex-col">
+      <main
+        className={`${pane === "chamado" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-hidden lg:flex`}
+      >
         {composing ? (
           <form onSubmit={openTicket} className="flex min-h-0 flex-1 flex-col">
-            <header className="border-b border-line px-8 py-5">
+            <header className="flex min-h-28 shrink-0 flex-col justify-center border-b border-line px-4 py-3 sm:px-6">
               <p className="text-[13px] text-muted">Novo chamado</p>
               <h2 className="mt-1 font-serif text-[30px] leading-tight">
                 O que aconteceu?
               </h2>
             </header>
-            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-8 py-5">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-5 sm:px-6">
               <input
                 value={subject}
                 onChange={(event) => setSubject(event.target.value)}
                 placeholder="Assunto"
-                className="rounded-md border border-line bg-white px-4 py-3 font-serif text-2xl outline-none placeholder:text-[#b7ad9f]"
+                className="w-full min-w-0 rounded-md border border-line bg-white px-4 py-3 font-serif text-2xl outline-none transition-colors placeholder:text-[#b7ad9f] hover:border-[#b7ad9f] focus:border-ink"
               />
               <textarea
                 value={opening}
                 onChange={(event) => setOpening(event.target.value)}
                 placeholder="Descreva o problema com o que você já tentou."
-                className="min-h-40 flex-1 resize-none rounded-md border border-line bg-white px-4 py-3 text-[15px] leading-6 outline-none placeholder:text-[#b7ad9f]"
+                className="min-h-40 w-full min-w-0 flex-1 resize-none rounded-md border border-line bg-white px-4 py-3 text-[15px] leading-6 outline-none transition-colors placeholder:text-[#b7ad9f] hover:border-[#b7ad9f] focus:border-ink"
               />
             </div>
-            <div className="border-t border-line bg-[#ebe4d8] px-6 py-3">
-              {error ? <p className="mb-2 text-sm text-mark">{error}</p> : null}
-              <div className="flex items-center justify-end gap-4">
+            <div className="border-t border-line bg-[#ebe4d8] px-4 py-3 sm:px-6">
+              {error ? (
+                <p className="mb-2 break-words text-sm text-mark">{error}</p>
+              ) : null}
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => {
                     setComposing(false);
                     setError("");
                   }}
-                  className="text-sm text-muted"
+                  className="rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-white hover:text-ink"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={busy}
-                  className="rounded-md bg-ink px-3 py-1.5 text-sm text-paper disabled:opacity-50"
+                  className="rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
                 >
                   Abrir chamado
                 </button>
@@ -380,19 +416,21 @@ export function Desk() {
           </form>
         ) : selected ? (
           <>
-            <header className="flex items-start justify-between gap-6 border-b border-line px-8 py-5">
-              <div className="min-w-0">
+            <header className="flex min-h-28 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-3 sm:px-6">
+              <div className="min-w-0 flex-1">
                 <p className="text-[13px] text-muted">
                   #{selected.id} · aberto {formatWhen(selected.createdAt)}
                 </p>
-                <h2 className="mt-1 truncate font-serif text-[30px] leading-tight">
+                <h2 className="mt-1 truncate font-serif text-[26px] leading-tight sm:text-[30px]">
                   {selected.subject}
                 </h2>
               </div>
-              <StatusMark status={selected.status} />
+              <span className="shrink-0">
+                <StatusMark status={selected.status} />
+              </span>
             </header>
 
-            <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto px-8 py-5">
+            <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-6">
               {selected.messages.map((message) => {
                 const fromAgent = message.author === "atendente";
                 return (
@@ -400,15 +438,17 @@ export function Desk() {
                     key={message.id}
                     className={
                       fromAgent
-                        ? "max-w-2xl rounded-md border border-[#d5e3d9] bg-[#f4f8f5] px-4 py-3"
-                        : "max-w-2xl rounded-md border border-line bg-white px-4 py-3"
+                        ? "w-full max-w-2xl rounded-md border border-[#d5e3d9] bg-[#f4f8f5] px-4 py-3"
+                        : "w-full max-w-2xl rounded-md border border-line bg-white px-4 py-3"
                     }
                   >
                     <p className="text-[12px] text-muted">
                       {fromAgent ? "Atendente" : "Cliente"} ·{" "}
                       {formatWhen(message.createdAt)}
                     </p>
-                    <p className="mt-1 text-[15px] leading-6">{message.body}</p>
+                    <p className="mt-1 break-words text-[15px] leading-6">
+                      {message.body}
+                    </p>
                   </li>
                 );
               })}
@@ -427,14 +467,15 @@ export function Desk() {
             />
           </>
         ) : (
-          <p className="px-8 py-10 text-muted">
+          <p className="px-4 py-10 text-muted sm:px-6">
             {loading
               ? "Carregando a fila."
               : error || "Escolha um chamado na fila."}
           </p>
         )}
       </main>
-      <ArticlesColumn />
+      <ArticlesColumn shown={pane === "base"} />
+      </div>
     </div>
   );
 }
@@ -462,7 +503,7 @@ function DeskAction({
 }) {
   if (status === "RESOLVIDO") {
     return (
-      <div className="border-t border-line bg-[#ebe4d8] px-8 py-4 text-sm text-muted">
+      <div className="border-t border-line bg-[#ebe4d8] px-4 py-4 text-sm text-muted sm:px-6">
         Este chamado está encerrado. O histórico fica aqui.
       </div>
     );
@@ -470,16 +511,18 @@ function DeskAction({
 
   if (status === "NOVO") {
     return (
-      <div className="flex items-center justify-between gap-4 border-t border-line bg-[#ebe4d8] px-6 py-3">
-        <p className="text-sm text-muted">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-[#ebe4d8] px-4 py-3 sm:px-6">
+        <p className="min-w-0 flex-1 text-sm text-muted">
           Este chamado ainda não foi assumido.
-          {error ? <span className="mt-1 block text-mark">{error}</span> : null}
+          {error ? (
+            <span className="mt-1 block break-words text-mark">{error}</span>
+          ) : null}
         </p>
         <button
           type="button"
           onClick={onAssume}
           disabled={busy}
-          className="rounded-md bg-ink px-3 py-1.5 text-sm text-paper disabled:opacity-50"
+          className="shrink-0 rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
         >
           Assumir
         </button>
@@ -491,40 +534,44 @@ function DeskAction({
     return (
       <form
         onSubmit={onReply}
-        className="border-t border-line bg-[#ebe4d8] px-6 py-3"
+        className="border-t border-line bg-[#ebe4d8] px-4 py-3 sm:px-6"
       >
-        {error ? <p className="mb-2 text-sm text-mark">{error}</p> : null}
-        <div className="flex items-end gap-3 rounded-md border border-[#cfc4b2] bg-white px-3 py-2">
+        {error ? (
+          <p className="mb-2 break-words text-sm text-mark">{error}</p>
+        ) : null}
+        <div className="flex min-w-0 flex-wrap items-end gap-2 rounded-md border border-[#cfc4b2] bg-white px-3 py-2">
           <textarea
             value={draft}
             onChange={(event) => onDraft(event.target.value)}
             placeholder="Escreva a resposta"
             rows={2}
-            className="max-h-28 min-h-12 flex-1 resize-none bg-transparent text-[15px] leading-6 outline-none placeholder:text-[#b7ad9f]"
+            className="max-h-28 min-h-12 w-full min-w-0 flex-1 basis-full resize-none bg-transparent text-[15px] leading-6 outline-none placeholder:text-[#b7ad9f] sm:basis-[12rem]"
           />
-          <button
-            type="button"
-            onClick={onSuggest}
-            disabled={busy}
-            className="mb-0.5 shrink-0 text-sm text-muted disabled:opacity-50"
-          >
-            Sugerir
-          </button>
-          <button
-            type="button"
-            onClick={onResolve}
-            disabled={busy}
-            className="mb-0.5 shrink-0 text-sm text-muted disabled:opacity-50"
-          >
-            Resolver
-          </button>
-          <button
-            type="submit"
-            disabled={busy}
-            className="mb-0.5 shrink-0 rounded-md bg-ink px-3 py-1.5 text-sm text-paper disabled:opacity-50"
-          >
-            Enviar
-          </button>
+          <div className="ml-auto flex max-w-full flex-wrap justify-end gap-1">
+            <button
+              type="button"
+              onClick={onSuggest}
+              disabled={busy}
+              className="rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-[#f3efe7] hover:text-ink disabled:opacity-50"
+            >
+              Sugerir
+            </button>
+            <button
+              type="button"
+              onClick={onResolve}
+              disabled={busy}
+              className="rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-[#f3efe7] hover:text-ink disabled:opacity-50"
+            >
+              Resolver
+            </button>
+            <button
+              type="submit"
+              disabled={busy}
+              className="rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
+            >
+              Enviar
+            </button>
+          </div>
         </div>
       </form>
     );
@@ -532,16 +579,18 @@ function DeskAction({
 
   if (status === "AGUARDANDO_CLIENTE") {
     return (
-      <div className="flex items-center justify-between gap-4 border-t border-line bg-[#ebe4d8] px-6 py-3">
-        <p className="text-sm text-muted">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-[#ebe4d8] px-4 py-3 sm:px-6">
+        <p className="min-w-0 flex-1 text-sm text-muted">
           Aguardando o cliente. A resposta do atendente já foi enviada.
-          {error ? <span className="mt-1 block text-mark">{error}</span> : null}
+          {error ? (
+            <span className="mt-1 block break-words text-mark">{error}</span>
+          ) : null}
         </p>
         <button
           type="button"
           onClick={onResolve}
           disabled={busy}
-          className="rounded-md bg-ink px-3 py-1.5 text-sm text-paper disabled:opacity-50"
+          className="shrink-0 rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
         >
           Resolver
         </button>
@@ -550,7 +599,7 @@ function DeskAction({
   }
 
   return (
-    <div className="border-t border-line bg-[#ebe4d8] px-8 py-4 text-sm text-muted">
+    <div className="border-t border-line bg-[#ebe4d8] px-4 py-4 text-sm text-muted sm:px-6">
       Esse status ainda não tem ação na mesa.
     </div>
   );
