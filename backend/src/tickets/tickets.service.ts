@@ -10,31 +10,70 @@ export class TicketsService {
     private readonly articlesService: ArticlesService,
     private readonly prisma: PrismaService) { }
 
-  create(input: CreateTicketDto) {
-    const subject = input.subject?.trim();
-    const message = input.message?.trim();
-
-    if (!subject || !message) {
-      throw new BadRequestException("Informe o assunto e a mensagem da solicitação");
+    async create(input: CreateTicketDto) {
+      const subject = input.subject?.trim();
+      const message = input.message?.trim();
+      if (!subject || !message) {
+        throw new BadRequestException("Informe o assunto e a mensagem da solicitação");
+      }
+      const ticket = await this.prisma.ticket.create({
+        data: {
+          subject,
+          status: TicketStatus.COM_IA,
+          messages: { create: { body: message, author: "cliente" } },
+        },
+        include: { messages: true },
+      });
+      let draft = "Não sei responder com a base publicada.";
+      try {
+        draft = await this.draftFor(ticket.subject, ticket.messages);
+      } catch {
+        draft = "Não sei responder com a base publicada.";
+      }
+      if (draft === "Não sei responder com a base publicada.") {
+        return this.prisma.ticket.update({
+          where: { id: ticket.id },
+          data: { status: TicketStatus.NA_FILA },
+          include: { messages: true },
+        });
+      }
+      await this.prisma.message.create({
+        data: { body: draft, author: "ia", ticketId: ticket.id },
+      });
+      return this.prisma.ticket.update({
+        where: { id: ticket.id },
+        data: { status: TicketStatus.AGUARDANDO_CLIENTE },
+        include: { messages: true },
+      });
     }
-
-    return this.prisma.ticket.create({
-      data: {
-        subject,
-        messages: { create: { body: message, author: "cliente" } },
-      },
-      include: {
-        messages: true,
-      },
-    })
-
-  }
 
   async findAll() {
     return await this.prisma.ticket.findMany({
       orderBy: { createdAt: "desc" },
       include: { messages: true },
     })
+  }
+
+  async metrics() {
+    const tickets = await this.findAll();
+  
+    const open = tickets.filter(
+      (ticket) => ticket.status !== TicketStatus.RESOLVIDO,
+    ).length;
+  
+    const answeredByAi = tickets.filter((ticket) => {
+      const hasAi = ticket.messages.some((message) => message.author === "ia");
+      const hasPerson = ticket.messages.some(
+        (message) => message.author === "atendente",
+      );
+      return hasAi && !hasPerson;
+    }).length;
+  
+    const handledByPerson = tickets.filter((ticket) =>
+      ticket.messages.some((message) => message.author === "atendente"),
+    ).length;
+  
+    return { open, answeredByAi, handledByPerson };
   }
 
   async findOne(id: number) {
@@ -72,8 +111,11 @@ export class TicketsService {
   async assume(id: number) {
     const ticket = await this.findOne(id);
 
-    if (ticket.status !== TicketStatus.NOVO) {
-      throw new BadRequestException("Só um chamado novo pode ser assumido")
+    if (
+      ticket.status !== TicketStatus.NOVO &&
+      ticket.status !== TicketStatus.NA_FILA
+    ) {
+      throw new BadRequestException("Só um chamado novo ou na fila pode ser assumido");
     }
 
     return this.prisma.ticket.update({
@@ -123,20 +165,25 @@ export class TicketsService {
   async suggest(id: number) {
     const ticket = await this.findOne(id);
     if (ticket.status !== TicketStatus.EM_ATENDIMENTO) {
-      throw new BadRequestException("Só um chamado em atendimento pode ser sugerido")
+      throw new BadRequestException("Só um chamado em atendimento pode ser sugerido");
     }
+    const draft = await this.draftFor(ticket.subject, ticket.messages);
+    return { draft };
+  }
 
+  private async draftFor(
+    subject: string,
+    messages: { author: string; body: string }[],
+  ) {
     const articles = await this.articlesService.findAll();
     if (articles.length === 0) {
-      return { draft: "Não há artigo publicado para responder este chamado." }
+      return "Não sei responder com a base publicada.";
     }
-
-    const key = process.env.GEMINI_API_KEY;
+    const key = process.env.OPENAI_API_KEY;
     if (!key) {
-      throw new Error("Erro na chave da API do Gemini.")
+      throw new BadRequestException("Falta a chave OPENAI_API_KEY no .env");
     }
-
-    const history = ticket.messages
+    const history = messages
       .map((message) => `${message.author}: ${message.body}`)
       .join("\n");
     const knowledge = articles
@@ -151,33 +198,37 @@ export class TicketsService {
       "Artigos:",
       knowledge,
       "",
-      `Assunto: ${ticket.subject}`,
+      `Assunto: ${subject}`,
       "Conversa:",
       history,
     ].join("\n");
-
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": key,
+        Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
       }),
-    })
-
+    });
     if (!response.ok) {
-      throw new Error("O Gemini não respondeu corretamente.")
+      const failure = (await response.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      const detail = failure?.error?.message;
+      throw new BadRequestException(
+        detail || `A OpenAI respondeu ${response.status}.`,
+      );
     }
-
     const payload = (await response.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
+      choices?: { message?: { content?: string } }[];
     };
-    const draft = payload.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    const draft = payload.choices?.[0]?.message?.content?.trim();
     if (!draft) {
-      throw new BadRequestException("O Gemini não devolveu texto.");
+      throw new BadRequestException("A OpenAI não devolveu texto.");
     }
-    return { draft };
+    return draft;
   }
 }

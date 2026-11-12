@@ -34,6 +34,10 @@ export class TicketsController {
   suggest(@Param('id') id: string) {
     return this.ticketsService.suggest(+id);
   }
+  @Get('metrics')
+  metrics() {
+    return this.ticketsService.metrics();
+  }
 
   @Get()
   findAll() {
