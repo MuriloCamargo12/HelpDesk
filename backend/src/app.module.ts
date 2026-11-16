@@ -5,6 +5,7 @@ import { AppService } from './app.service.js';
 import { TicketsModule } from './tickets/tickets.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ArticlesModule } from './articles/articles.module.js';
+import { AuthModule } from './auth/auth.module.js';
 
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
@@ -19,6 +20,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       serviceId: 'backend',
     }),
     TicketsModule,
+    AuthModule,
     PrismaModule,
     ArticlesModule,
   ],

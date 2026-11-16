@@ -1,8 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { CreateTicketDto } from './dto/create-ticket.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { TicketStatus } from '../generated/prisma/enums.js';
 import { ArticlesService } from '../articles/articles.service.js';
+import { Role, TicketStatus } from '../generated/prisma/enums.js';
+
+type Actor = { id: number; role: string };
+
+
 
 @Injectable()
 export class TicketsService {
@@ -10,7 +14,7 @@ export class TicketsService {
     private readonly articlesService: ArticlesService,
     private readonly prisma: PrismaService) { }
 
-    async create(input: CreateTicketDto) {
+    async create(input: CreateTicketDto, openerId: number) {
       const subject = input.subject?.trim();
       const message = input.message?.trim();
       if (!subject || !message) {
@@ -20,6 +24,7 @@ export class TicketsService {
         data: {
           subject,
           status: TicketStatus.COM_IA,
+          openerId,
           messages: { create: { body: message, author: "cliente" } },
         },
         include: { messages: true },
@@ -47,15 +52,19 @@ export class TicketsService {
       });
     }
 
-  async findAll() {
-    return await this.prisma.ticket.findMany({
-      orderBy: { createdAt: "desc" },
-      include: { messages: true },
-    })
-  }
+    async findAll(user: Actor) {
+      return await this.prisma.ticket.findMany({
+        where: user.role === Role.CLIENTE ? { openerId: user.id } : undefined,
+        orderBy: { createdAt: "desc" },
+        include: { messages: true },
+      })
+    }
 
   async metrics() {
-    const tickets = await this.findAll();
+    const tickets = await this.prisma.ticket.findMany({
+      orderBy: { createdAt: "desc" },
+      include: { messages: true },
+    });
   
     const open = tickets.filter(
       (ticket) => ticket.status !== TicketStatus.RESOLVIDO,
@@ -76,7 +85,7 @@ export class TicketsService {
     return { open, answeredByAi, handledByPerson };
   }
 
-  async findOne(id: number) {
+  async findOne(id: number, user?: Actor | null) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },
       include: { messages: { orderBy: { createdAt: "asc" } } },
@@ -86,11 +95,21 @@ export class TicketsService {
       throw new NotFoundException("Chamado não encontrado")
     }
 
+    if (user?.role === Role.CLIENTE && ticket.openerId !== user.id) {
+      throw new ForbiddenException("Este chamado não é seu");
+    }
+
     return ticket;
   }
 
-  async addMessage(id: number, message: string) {
+  async addMessage(id: number, message: string, user: Actor | null) {
+    if (!user) {
+      throw new UnauthorizedException("Faça login para responder");
+    }
     const ticket = await this.findOne(id);
+    if (user.role !== Role.CLIENTE || ticket.openerId !== user.id) {
+      throw new ForbiddenException("Só o cliente deste chamado pode responder");
+    }
     const body = message?.trim();
     if (!body) {
       throw new BadRequestException("Informe a message");
@@ -108,7 +127,19 @@ export class TicketsService {
     });
   }
 
-  async assume(id: number) {
+  atendenteDe(user: Actor | null) {
+    if (!user) {
+      throw new UnauthorizedException("Faça login");
+    }
+    if (user.role !== Role.ATENDENTE) {
+      throw new ForbiddenException("Só um atendente pode fazer isso");
+    }
+    return user;
+  }
+
+  async assume(id: number, user: Actor | null) {
+    const atendente = this.atendenteDe(user);
+
     const ticket = await this.findOne(id);
 
     if (
@@ -120,12 +151,16 @@ export class TicketsService {
 
     return this.prisma.ticket.update({
       where: { id },
-      data: { status: TicketStatus.EM_ATENDIMENTO },
+      data: {
+        status: TicketStatus.EM_ATENDIMENTO,
+        assigneeId: atendente.id,
+      },
       include: { messages: true },
-    })
-  }
+    });
+}
 
-  async resolve(id: number) {
+  async resolve(id: number, user: Actor | null) {
+    this.atendenteDe(user);
     const ticket = await this.findOne(id);
 
     if (
@@ -142,7 +177,8 @@ export class TicketsService {
     })
   }
 
-  async reply(id: number, message: string) {
+  async reply(id: number, message: string, user: Actor | null) {
+    this.atendenteDe(user);
     const ticket = await this.findOne(id);
     if (ticket.status !== TicketStatus.EM_ATENDIMENTO) {
       throw new BadRequestException("Só um chamado em atendimento pode ser respondido")
@@ -162,7 +198,8 @@ export class TicketsService {
       include: { messages: true },
     });
   }
-  async suggest(id: number) {
+  async suggest(id: number, user: Actor | null) {
+    this.atendenteDe(user);
     const ticket = await this.findOne(id);
     if (ticket.status !== TicketStatus.EM_ATENDIMENTO) {
       throw new BadRequestException("Só um chamado em atendimento pode ser sugerido");

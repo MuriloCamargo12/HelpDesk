@@ -1,52 +1,99 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, UnauthorizedException } from '@nestjs/common';
 import { TicketsService } from './tickets.service.js';
 import { CreateTicketDto } from './dto/create-ticket.dto.js';
+import { AuthService } from '../auth/auth.service.js';
 
 @Controller('tickets')
 export class TicketsController {
-  constructor(private readonly ticketsService: TicketsService) { }
+  constructor(
+    private readonly ticketsService: TicketsService,
+    private readonly authService: AuthService,
+  ) { }
 
   @Post()
-  create(@Body() createTicketDto: CreateTicketDto) {
-    return this.ticketsService.create(createTicketDto);
+  async create(
+    @Body() createTicketDto: CreateTicketDto,
+    @Headers('authorization') authorization?: string,
+  ) {
+    const user = await this.authService.userFromHeader(authorization);
+    if (!user) {
+      throw new UnauthorizedException('Faça login para abrir um chamado');
+    }
+    return this.ticketsService.create(createTicketDto, user.id);
   }
 
   @Post(':id/messages')
-  addMessage(@Param('id') id: string, @Body() body: { message?: string }) {
-    return this.ticketsService.addMessage(+id, body.message ?? "");
+  async addMessage(
+    @Param('id') id: string,
+    @Body() body: { message?: string },
+    @Headers('authorization') authorization?: string,
+  ) {
+    const user = await this.authService.userFromHeader(authorization);
+    return this.ticketsService.addMessage(+id, body.message ?? '', user);
   }
 
   @Post(':id/assume')
-  assume(@Param('id') id: string) {
-    return this.ticketsService.assume(+id);
+  async assume(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    const user = await this.authService.userFromHeader(authorization);
+    return this.ticketsService.assume(+id, user);
   }
+
   @Post(':id/resolve')
-  resolve(@Param('id') id: string) {
-    return this.ticketsService.resolve(+id);
+  async resolve(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    const user = await this.authService.userFromHeader(authorization);
+    return this.ticketsService.resolve(+id, user);
   }
 
   @Post(':id/reply')
-  reply(@Param('id') id: string, @Body() body: { message?: string }) {
-    return this.ticketsService.reply(+id, body.message ?? '');
+  async reply(
+    @Param('id') id: string,
+    @Body() body: { message?: string },
+    @Headers('authorization') authorization?: string,
+  ) {
+    const user = await this.authService.userFromHeader(authorization);
+    return this.ticketsService.reply(+id, body.message ?? '', user);
   }
 
   @Post(':id/suggest')
-  suggest(@Param('id') id: string) {
-    return this.ticketsService.suggest(+id);
+  async suggest(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    const user = await this.authService.userFromHeader(authorization);
+    return this.ticketsService.suggest(+id, user);
   }
+
   @Get('metrics')
-  metrics() {
+  async metrics(@Headers('authorization') authorization?: string) {
+    const user = await this.authService.userFromHeader(authorization);
+    this.ticketsService.atendenteDe(user);
     return this.ticketsService.metrics();
   }
 
   @Get()
-  findAll() {
-    return this.ticketsService.findAll();
+  async findAll(@Headers('authorization') authorization?: string) {
+    const user = await this.authService.userFromHeader(authorization);
+    if (!user) {
+      throw new UnauthorizedException('Faça login para ver os chamados');
+    }
+    return this.ticketsService.findAll(user);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.ticketsService.findOne(+id);
+  async findOne(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    const user = await this.authService.userFromHeader(authorization);
+    if (!user) {
+      throw new UnauthorizedException('Faça login para ver o chamado');
+    }
+    return this.ticketsService.findOne(+id, user);
   }
-
 }

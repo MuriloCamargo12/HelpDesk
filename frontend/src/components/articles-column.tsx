@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { ArticleListSkeleton } from "./skeleton";
 
 const API = "http://localhost:4000";
 
@@ -40,6 +41,7 @@ export function ArticlesColumn({ shown = true }: { shown?: boolean }) {
   const [body, setBody] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   async function load() {
     const data = await api<Article[]>("/articles?all=1");
@@ -47,7 +49,9 @@ export function ArticlesColumn({ shown = true }: { shown?: boolean }) {
   }
 
   useEffect(() => {
-    load().catch((caught: Error) => setError(caught.message));
+    load()
+      .catch((caught: Error) => setError(caught.message))
+      .finally(() => setLoading(false));
   }, []);
 
   async function createArticle(event: FormEvent) {
@@ -112,7 +116,9 @@ export function ArticlesColumn({ shown = true }: { shown?: boolean }) {
       </header>
 
       <ul className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {articles.length === 0 ? (
+        {loading ? (
+          <ArticleListSkeleton />
+        ) : articles.length === 0 ? (
           <li className="px-1 py-3 text-sm text-muted">Nenhum artigo ainda.</li>
         ) : (
           articles.map((article) => (
@@ -125,7 +131,7 @@ export function ArticlesColumn({ shown = true }: { shown?: boolean }) {
                 type="button"
                 onClick={() => toggle(article)}
                 disabled={busy}
-                className="mt-2 rounded-md px-1 py-0.5 text-[13px] text-ink transition-colors hover:bg-[#f3efe7] disabled:opacity-50"
+                className="mt-2 cursor-pointer rounded-md border border-line bg-white px-2 py-1 text-[13px] text-ink transition-colors hover:bg-[#f3efe7] disabled:opacity-50"
               >
                 {article.published ? "Despublicar" : "Republicar"}
               </button>
@@ -158,7 +164,7 @@ export function ArticlesColumn({ shown = true }: { shown?: boolean }) {
           <button
             type="submit"
             disabled={busy}
-            className="max-w-full rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
+            className="max-w-full cursor-pointer rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
           >
             Guardar artigo
           </button>

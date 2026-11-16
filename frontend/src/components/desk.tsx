@@ -1,9 +1,16 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArticlesColumn } from "./articles-column";
-
-const API = "http://localhost:4000";
+import {
+  AppSkeleton,
+  MetricValueSkeleton,
+  QueueSkeleton,
+  TicketPaneSkeleton,
+} from "./skeleton";
+import { api } from "../lib/api";
+import { clearSession, readSession, type Session } from "../lib/session";
 
 type Status =
   | "NOVO"
@@ -26,6 +33,12 @@ type Ticket = {
   status: Status;
   createdAt: string;
   messages: Message[];
+};
+
+type Metrics = {
+  open: number;
+  answeredByAi: number;
+  handledByPerson: number;
 };
 
 const statusLabel: Record<Status, string> = {
@@ -90,29 +103,10 @@ function normalize(ticket: Ticket): Ticket {
   };
 }
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as {
-      message?: string | string[];
-    } | null;
-    const message = payload?.message;
-    throw new Error(
-      Array.isArray(message)
-        ? message.join(" ")
-        : message || "Não foi possível falar com o servidor.",
-    );
-  }
-  return response.json() as Promise<T>;
-}
-
 export function Desk() {
+  const router = useRouter();
+  const [session, setSession] = useState<Session | null>(null);
+  const [checked, setChecked] = useState(false);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>("Abertos");
@@ -124,8 +118,24 @@ export function Desk() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pane, setPane] = useState<"fila" | "chamado" | "base">("fila");
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
 
   useEffect(() => {
+    const current = readSession();
+    if (!current) {
+      router.replace("/login");
+      return;
+    }
+    if (current.user.role !== "ATENDENTE") {
+      router.replace("/cliente");
+      return;
+    }
+    setSession(current);
+    setChecked(true);
+  }, [router]);
+
+  useEffect(() => {
+    if (!checked) return;
     let cancelled = false;
     api<Ticket[]>("/tickets")
       .then((data) => {
@@ -145,7 +155,18 @@ export function Desk() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [checked]);
+
+  function loadMetrics() {
+    api<Metrics>("/tickets/metrics")
+      .then(setMetrics)
+      .catch(() => setMetrics(null));
+  }
+
+  useEffect(() => {
+    if (!checked) return;
+    loadMetrics();
+  }, [checked]);
 
   const visible = useMemo(
     () => tickets.filter((ticket) => matches(ticket, filter)),
@@ -175,6 +196,7 @@ export function Desk() {
       );
     });
     setSelectedId(next.id);
+    loadMetrics();
   }
 
   async function run(action: () => Promise<void>) {
@@ -229,7 +251,7 @@ export function Desk() {
         body: JSON.stringify({ subject: nextSubject, message: nextBody }),
       });
       replace(ticket);
-      setFilter("Novos");
+      setFilter("Abertos");
       setSubject("");
       setOpening("");
       setComposing(false);
@@ -258,11 +280,20 @@ export function Desk() {
     });
   }
 
+  function logout() {
+    clearSession();
+    router.replace("/login");
+  }
+
   const panes = [
     ["fila", "Fila"],
     ["chamado", "Chamado"],
     ["base", "Base"],
   ] as const;
+
+  if (!checked || !session) {
+    return <AppSkeleton articles />;
+  }
 
   return (
     <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-paper text-ink">
@@ -274,8 +305,8 @@ export function Desk() {
             onClick={() => setPane(id)}
             className={
               pane === id
-                ? "rounded-md bg-[#efe8dc] px-2 py-1.5 text-[13px] text-ink"
-                : "rounded-md px-2 py-1.5 text-[13px] text-[#c8bfb2] transition-colors hover:bg-[#31423a] hover:text-rail-ink"
+                ? "cursor-pointer rounded-md bg-[#efe8dc] px-2 py-1.5 text-[13px] text-ink"
+                : "cursor-pointer rounded-md px-2 py-1.5 text-[13px] text-[#c8bfb2] transition-colors hover:bg-[#31423a] hover:text-rail-ink"
             }
           >
             {label}
@@ -299,9 +330,19 @@ export function Desk() {
                 setError("");
                 setPane("chamado");
               }}
-              className="shrink-0 rounded-md bg-[#efe8dc] px-2.5 py-1 text-[13px] text-ink transition-colors hover:bg-white"
+              className="shrink-0 cursor-pointer rounded-md bg-[#efe8dc] px-2.5 py-1 text-[13px] text-ink transition-colors hover:bg-white"
             >
               Novo
+            </button>
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3 text-[13px] text-[#c8bfb2]">
+            <span className="truncate">{session.user.name}</span>
+            <button
+              type="button"
+              onClick={logout}
+              className="shrink-0 cursor-pointer rounded-md border border-white/30 px-2.5 py-1 text-rail-ink transition-colors hover:bg-white/10"
+            >
+              Sair
             </button>
           </div>
 
@@ -313,8 +354,8 @@ export function Desk() {
                 onClick={() => setFilter(item)}
                 className={
                   item === filter
-                    ? "rounded-md bg-[#efe8dc] px-1.5 py-1 text-ink transition-colors hover:bg-white"
-                    : "rounded-md px-1.5 py-1 text-[#c8bfb2] transition-colors hover:bg-[#31423a] hover:text-rail-ink"
+                    ? "cursor-pointer rounded-md bg-[#efe8dc] px-1.5 py-1 text-ink transition-colors hover:bg-white"
+                    : "cursor-pointer rounded-md px-1.5 py-1 text-[#c8bfb2] transition-colors hover:bg-[#31423a] hover:text-rail-ink"
                 }
               >
                 {item}
@@ -323,11 +364,26 @@ export function Desk() {
           </div>
         </div>
 
-        <ul className="min-h-0 flex-1 overflow-y-auto">
+        <dl className="shrink-0 space-y-1 border-b border-white/10 px-4 py-3 text-[13px]">
+          {(
+            [
+              ["Abertos", metrics?.open],
+              ["Respondidos pela IA", metrics?.answeredByAi],
+              ["Atendidos por uma pessoa", metrics?.handledByPerson],
+            ] as const
+          ).map(([label, value]) => (
+            <div key={label} className="flex items-baseline justify-between gap-3">
+              <dt className="text-[#c8bfb2]">{label}</dt>
+              <dd className="shrink-0 text-rail-ink">
+                {loading && value == null ? <MetricValueSkeleton /> : (value ?? "–")}
+              </dd>
+            </div>
+          ))}
+        </dl>
+
+        <ul className="min-h-0 flex-1 overflow-y-auto pt-3">
           {loading ? (
-            <li className="px-4 py-6 text-sm text-[#c8bfb2]">
-              Carregando a fila.
-            </li>
+            <QueueSkeleton />
           ) : visible.length === 0 ? (
             <li className="px-4 py-6 text-sm text-[#c8bfb2]">
               Nada nesta fila.
@@ -340,7 +396,7 @@ export function Desk() {
                   <button
                     type="button"
                     onClick={() => select(ticket.id)}
-                    className={`block w-full min-w-0 overflow-hidden rounded-md px-3 py-2.5 text-left ${
+                    className={`block w-full min-w-0 cursor-pointer overflow-hidden rounded-md px-3 py-2.5 text-left ${
                       active ? "bg-[#31423a]" : "hover:bg-[#2b3a33]"
                     }`}
                   >
@@ -400,14 +456,14 @@ export function Desk() {
                     setComposing(false);
                     setError("");
                   }}
-                  className="rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-white hover:text-ink"
+                  className="cursor-pointer rounded-md border border-[#cfc4b2] bg-white px-2.5 py-1.5 text-sm text-ink transition-colors hover:bg-[#f3efe7]"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={busy}
-                  className="rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
+                  className="cursor-pointer rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
                 >
                   Abrir chamado
                 </button>
@@ -433,18 +489,25 @@ export function Desk() {
             <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-6">
               {selected.messages.map((message) => {
                 const fromAgent = message.author === "atendente";
+                const fromAi = message.author === "ia";
+                const authorLabel = fromAgent
+                  ? "Atendente"
+                  : fromAi
+                    ? "IA"
+                    : "Cliente";
                 return (
                   <li
                     key={message.id}
                     className={
                       fromAgent
                         ? "w-full max-w-2xl rounded-md border border-[#d5e3d9] bg-[#f4f8f5] px-4 py-3"
-                        : "w-full max-w-2xl rounded-md border border-line bg-white px-4 py-3"
+                        : fromAi
+                          ? "w-full max-w-2xl rounded-md border border-[#e7d7b8] bg-[#fbf6ea] px-4 py-3"
+                          : "w-full max-w-2xl rounded-md border border-line bg-white px-4 py-3"
                     }
                   >
                     <p className="text-[12px] text-muted">
-                      {fromAgent ? "Atendente" : "Cliente"} ·{" "}
-                      {formatWhen(message.createdAt)}
+                      {authorLabel} · {formatWhen(message.createdAt)}
                     </p>
                     <p className="mt-1 break-words text-[15px] leading-6">
                       {message.body}
@@ -466,11 +529,11 @@ export function Desk() {
               onResolve={resolve}
             />
           </>
+        ) : loading ? (
+          <TicketPaneSkeleton />
         ) : (
           <p className="px-4 py-10 text-muted sm:px-6">
-            {loading
-              ? "Carregando a fila."
-              : error || "Escolha um chamado na fila."}
+            {error || "Escolha um chamado na fila."}
           </p>
         )}
       </main>
@@ -509,11 +572,13 @@ function DeskAction({
     );
   }
 
-  if (status === "NOVO") {
+  if (status === "NOVO" || status === "NA_FILA") {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-[#ebe4d8] px-4 py-3 sm:px-6">
         <p className="min-w-0 flex-1 text-sm text-muted">
-          Este chamado ainda não foi assumido.
+          {status === "NA_FILA"
+            ? "A IA não soube responder com a base publicada."
+            : "Este chamado ainda não foi assumido."}
           {error ? (
             <span className="mt-1 block break-words text-mark">{error}</span>
           ) : null}
@@ -522,7 +587,7 @@ function DeskAction({
           type="button"
           onClick={onAssume}
           disabled={busy}
-          className="shrink-0 rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
+          className="shrink-0 cursor-pointer rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
         >
           Assumir
         </button>
@@ -552,7 +617,7 @@ function DeskAction({
               type="button"
               onClick={onSuggest}
               disabled={busy}
-              className="rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-[#f3efe7] hover:text-ink disabled:opacity-50"
+              className="cursor-pointer rounded-md border border-line bg-paper px-2.5 py-1.5 text-sm text-ink transition-colors hover:bg-[#e7e0d4] disabled:opacity-50"
             >
               Sugerir
             </button>
@@ -560,14 +625,14 @@ function DeskAction({
               type="button"
               onClick={onResolve}
               disabled={busy}
-              className="rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-[#f3efe7] hover:text-ink disabled:opacity-50"
+              className="cursor-pointer rounded-md border border-line bg-paper px-2.5 py-1.5 text-sm text-ink transition-colors hover:bg-[#e7e0d4] disabled:opacity-50"
             >
               Resolver
             </button>
             <button
               type="submit"
               disabled={busy}
-              className="rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
+              className="cursor-pointer rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
             >
               Enviar
             </button>
@@ -581,7 +646,7 @@ function DeskAction({
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-[#ebe4d8] px-4 py-3 sm:px-6">
         <p className="min-w-0 flex-1 text-sm text-muted">
-          Aguardando o cliente. A resposta do atendente já foi enviada.
+          Aguardando o cliente. A resposta já foi enviada.
           {error ? (
             <span className="mt-1 block break-words text-mark">{error}</span>
           ) : null}
@@ -590,7 +655,7 @@ function DeskAction({
           type="button"
           onClick={onResolve}
           disabled={busy}
-          className="shrink-0 rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
+          className="shrink-0 cursor-pointer rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
         >
           Resolver
         </button>

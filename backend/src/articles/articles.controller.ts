@@ -1,44 +1,91 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Headers, Param, Patch, Post, Query, UnauthorizedException } from '@nestjs/common';
 import { ArticlesService } from './articles.service.js';
 import { CreateArticleDto } from './dto/create-article.dto.js';
 import { UpdateArticleDto } from './dto/update-article.dto.js';
+import { AuthService } from '../auth/auth.service.js';
+import { Role } from '../generated/prisma/enums.js';
 
 @Controller('articles')
 export class ArticlesController {
-  constructor(private readonly articlesService: ArticlesService) {}
+  constructor(
+    private readonly articlesService: ArticlesService,
+    private readonly authService: AuthService,
+  ) {}
+
+  private async atendenteDe(authorization?: string) {
+    const user = await this.authService.userFromHeader(authorization);
+    if (!user) {
+      throw new UnauthorizedException('Faça login');
+    }
+    if (user.role !== Role.ATENDENTE) {
+      throw new ForbiddenException('Só um atendente pode fazer isso');
+    }
+    return user;
+  }
 
   @Post()
-  create(@Body() createArticleDto: CreateArticleDto) {
+  async create(
+    @Body() createArticleDto: CreateArticleDto,
+    @Headers('authorization') authorization?: string,
+  ) {
+    await this.atendenteDe(authorization);
     return this.articlesService.create(createArticleDto);
   }
 
   @Get()
-  findAll(@Query('all') all?: string) {
+  async findAll(
+    @Query('all') all?: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    if (all === '1') {
+      await this.atendenteDe(authorization);
+    }
     return this.articlesService.findAll(all === '1');
   }
 
   @Post(':id/unpublish')
-  unpublish(@Param('id') id: string) {
+  async unpublish(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    await this.atendenteDe(authorization);
     return this.articlesService.unpublish(+id);
   }
 
   @Post(':id/publish')
-  publish(@Param('id') id: string) {
+  async publish(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    await this.atendenteDe(authorization);
     return this.articlesService.publish(+id);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  async findOne(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    await this.atendenteDe(authorization);
     return this.articlesService.findOne(+id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateArticleDto: UpdateArticleDto) {
+  async update(
+    @Param('id') id: string,
+    @Body() updateArticleDto: UpdateArticleDto,
+    @Headers('authorization') authorization?: string,
+  ) {
+    await this.atendenteDe(authorization);
     return this.articlesService.update(+id, updateArticleDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
+  async remove(
+    @Param('id') id: string,
+    @Headers('authorization') authorization?: string,
+  ) {
+    await this.atendenteDe(authorization);
     return this.articlesService.remove(+id);
   }
 }

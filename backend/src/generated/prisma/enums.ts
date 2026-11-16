@@ -19,3 +19,11 @@ export const TicketStatus = {
 } as const
 
 export type TicketStatus = (typeof TicketStatus)[keyof typeof TicketStatus]
+
+
+export const Role = {
+  CLIENTE: 'CLIENTE',
+  ATENDENTE: 'ATENDENTE'
+} as const
+
+export type Role = (typeof Role)[keyof typeof Role]

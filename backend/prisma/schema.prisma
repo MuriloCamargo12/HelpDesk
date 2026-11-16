@@ -5,13 +5,12 @@
 
 generator client {
   provider = "prisma-client"
-  output = "../src/generated/prisma"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "mysql"
 }
-
 
 enum TicketStatus {
   NOVO
@@ -22,28 +21,47 @@ enum TicketStatus {
   RESOLVIDO
 }
 
+enum Role {
+  CLIENTE
+  ATENDENTE
+}
+
+model User {
+  id              Int      @id @default(autoincrement())
+  name            String
+  email           String   @unique
+  passwordHash    String
+  role            Role
+  createdAt       DateTime @default(now())
+  openedTickets   Ticket[] @relation("Opener")
+  assignedTickets Ticket[] @relation("Assignee")
+}
+
 model Ticket {
-  id Int @id @default(autoincrement())
-  subject String
-  status TicketStatus @default(NOVO)
-  createdAt DateTime @default(now())
-  messages Message[]
+  id         Int          @id @default(autoincrement())
+  subject    String
+  status     TicketStatus @default(NOVO)
+  createdAt  DateTime     @default(now())
+  messages   Message[]
+  openerId   Int?
+  opener     User?        @relation("Opener", fields: [openerId], references: [id])
+  assigneeId Int?
+  assignee   User?        @relation("Assignee", fields: [assigneeId], references: [id])
 }
 
 model Message {
-  id Int @id @default(autoincrement())
-  body String @db.Text
-  author String
+  id        Int      @id @default(autoincrement())
+  body      String   @db.Text
+  author    String
   createdAt DateTime @default(now())
-  ticket Ticket @relation(fields: [ticketId], references: [id])
-  ticketId Int
+  ticket    Ticket   @relation(fields: [ticketId], references: [id])
+  ticketId  Int
 }
 
-
 model Article {
-  id Int @id @default(autoincrement())
-  title String
-  body String @db.Text
-  published Boolean @default(true)
+  id        Int      @id @default(autoincrement())
+  title     String
+  body      String   @db.Text
+  published Boolean  @default(true)
   createdAt DateTime @default(now())
 }

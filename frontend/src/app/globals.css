@@ -27,3 +27,9 @@ body {
   color: var(--ink);
   font-family: var(--font-schibsted), sans-serif;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse {
+    animation: none;
+  }
+}
