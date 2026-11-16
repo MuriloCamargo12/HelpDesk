@@ -32,6 +32,7 @@ type Ticket = {
   subject: string;
   status: Status;
   createdAt: string;
+  opener: { name: string } | null;
   messages: Message[];
 };
 
@@ -97,10 +98,17 @@ function formatWhen(value: string) {
   }).format(date);
 }
 
+function openerName(ticket: Ticket) {
+  const name = ticket.opener?.name?.trim();
+  return name ? name : null;
+}
+
 function normalize(ticket: Ticket): Ticket {
   const messages = Array.isArray(ticket.messages) ? ticket.messages : [];
+  const name = openerName(ticket);
   return {
     ...ticket,
+    opener: name ? { name } : null,
     messages: [...messages].sort(
       (a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() ||
@@ -452,7 +460,9 @@ export function Desk() {
                   >
                     <span className="flex items-center justify-between gap-3 text-[12px] text-[#c8bfb2]">
                       <span className="truncate">
-                        {formatWhen(ticket.createdAt)}
+                        {openerName(ticket)
+                          ? `${openerName(ticket)} · ${formatWhen(ticket.createdAt)}`
+                          : formatWhen(ticket.createdAt)}
                       </span>
                       <span className="shrink-0">#{ticket.id}</span>
                     </span>
@@ -525,7 +535,9 @@ export function Desk() {
             <header className="flex min-h-28 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-3 sm:px-6">
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] text-muted">
-                  #{selected.id} · aberto {formatWhen(selected.createdAt)}
+                  #{selected.id}
+                  {openerName(selected) ? ` · ${openerName(selected)}` : ""} · aberto{" "}
+                  {formatWhen(selected.createdAt)}
                 </p>
                 <h2 className="mt-1 truncate font-serif text-[26px] leading-tight sm:text-[30px]">
                   {selected.subject}
@@ -547,7 +559,9 @@ export function Desk() {
                   ? "Atendente"
                   : fromAi
                     ? "IA"
-                    : "Cliente";
+                    : openerName(selected)
+                      ? `Cliente · ${openerName(selected)}`
+                      : "Cliente";
                 return (
                   <li
                     key={message.id}

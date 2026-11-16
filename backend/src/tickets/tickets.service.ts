@@ -6,6 +6,11 @@ import { Role, TicketStatus } from '../generated/prisma/enums.js';
 
 type Actor = { id: number; role: string };
 
+const ticketView = {
+  messages: true,
+  opener: { select: { name: true } },
+} as const;
+
 
 
 @Injectable()
@@ -27,7 +32,7 @@ export class TicketsService {
           openerId,
           messages: { create: { body: message, author: "cliente" } },
         },
-        include: { messages: true },
+        include: ticketView,
       });
       let draft = "Não sei responder com a base publicada.";
       try {
@@ -39,7 +44,7 @@ export class TicketsService {
         return this.prisma.ticket.update({
           where: { id: ticket.id },
           data: { status: TicketStatus.NA_FILA },
-          include: { messages: true },
+          include: ticketView,
         });
       }
       await this.prisma.message.create({
@@ -48,7 +53,7 @@ export class TicketsService {
       return this.prisma.ticket.update({
         where: { id: ticket.id },
         data: { status: TicketStatus.AGUARDANDO_CLIENTE },
-        include: { messages: true },
+        include: ticketView,
       });
     }
 
@@ -56,7 +61,7 @@ export class TicketsService {
       return await this.prisma.ticket.findMany({
         where: user.role === Role.CLIENTE ? { openerId: user.id } : undefined,
         orderBy: { createdAt: "desc" },
-        include: { messages: true },
+        include: ticketView,
       })
     }
 
@@ -88,7 +93,10 @@ export class TicketsService {
   async findOne(id: number, user?: Actor | null) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },
-      include: { messages: { orderBy: { createdAt: "asc" } } },
+      include: {
+        messages: { orderBy: { createdAt: "asc" } },
+        opener: { select: { name: true } },
+      },
     });
 
     if (!ticket) {
@@ -126,7 +134,7 @@ export class TicketsService {
     return this.prisma.ticket.update({
       where: { id },
       data: { status: TicketStatus.EM_ATENDIMENTO },
-      include: { messages: true },
+      include: ticketView,
     });
   }
 
@@ -158,7 +166,7 @@ export class TicketsService {
         status: TicketStatus.EM_ATENDIMENTO,
         assigneeId: atendente.id,
       },
-      include: { messages: true },
+      include: ticketView,
     });
 }
 
@@ -176,7 +184,7 @@ export class TicketsService {
     return this.prisma.ticket.update({
       where: { id },
       data: { status: TicketStatus.RESOLVIDO },
-      include: { messages: true },
+      include: ticketView,
     })
   }
 
@@ -201,7 +209,7 @@ export class TicketsService {
     return this.prisma.ticket.update({
       where: { id },
       data: { status: TicketStatus.AGUARDANDO_CLIENTE },
-      include: { messages: true },
+      include: ticketView,
     });
   }
   async suggest(id: number, user: Actor | null) {
