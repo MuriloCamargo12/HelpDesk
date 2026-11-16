@@ -1,6 +1,7 @@
 import { readSession } from "./session";
 
-const API = "http://localhost:4000";
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const session = readSession();
