@@ -10,7 +10,7 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       "http://localhost:3000",
-      "https://help-desk-dvwjngj4t-murilocamargo12s-projects.vercel.app",
+      "https://help-desk-flame-theta.vercel.app",
     ],
   });
   app.useGlobalPipes(new ValidationPipe({
