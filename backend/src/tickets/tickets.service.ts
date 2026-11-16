@@ -110,6 +110,9 @@ export class TicketsService {
     if (user.role !== Role.CLIENTE || ticket.openerId !== user.id) {
       throw new ForbiddenException("Só o cliente deste chamado pode responder");
     }
+    if (ticket.status === TicketStatus.RESOLVIDO) {
+      throw new BadRequestException("Esse chamado está encerrado");
+    }
     const body = message?.trim();
     if (!body) {
       throw new BadRequestException("Informe a message");
@@ -180,7 +183,10 @@ export class TicketsService {
   async reply(id: number, message: string, user: Actor | null) {
     this.atendenteDe(user);
     const ticket = await this.findOne(id);
-    if (ticket.status !== TicketStatus.EM_ATENDIMENTO) {
+    if (
+      ticket.status !== TicketStatus.EM_ATENDIMENTO &&
+      ticket.status !== TicketStatus.AGUARDANDO_CLIENTE
+    ) {
       throw new BadRequestException("Só um chamado em atendimento pode ser respondido")
     }
 
@@ -201,10 +207,16 @@ export class TicketsService {
   async suggest(id: number, user: Actor | null) {
     this.atendenteDe(user);
     const ticket = await this.findOne(id);
-    if (ticket.status !== TicketStatus.EM_ATENDIMENTO) {
+    if (
+      ticket.status !== TicketStatus.EM_ATENDIMENTO &&
+      ticket.status !== TicketStatus.AGUARDANDO_CLIENTE
+    ) {
       throw new BadRequestException("Só um chamado em atendimento pode ser sugerido");
     }
-    const draft = await this.draftFor(ticket.subject, ticket.messages);
+    const articles = await this.articlesService.findAll();
+    const draft = articles.length === 0
+      ? await this.draftFromConversation(ticket.subject, ticket.messages)
+      : await this.draftFor(ticket.subject, ticket.messages);
     return { draft };
   }
 
@@ -215,10 +227,6 @@ export class TicketsService {
     const articles = await this.articlesService.findAll();
     if (articles.length === 0) {
       return "Não sei responder com a base publicada.";
-    }
-    const key = process.env.OPENAI_API_KEY;
-    if (!key) {
-      throw new BadRequestException("Falta a chave OPENAI_API_KEY no .env");
     }
     const history = messages
       .map((message) => `${message.author}: ${message.body}`)
@@ -239,6 +247,33 @@ export class TicketsService {
       "Conversa:",
       history,
     ].join("\n");
+    return this.complete(prompt);
+  }
+
+  private async draftFromConversation(
+    subject: string,
+    messages: { author: string; body: string }[],
+  ) {
+    const history = messages
+      .map((message) => `${message.author}: ${message.body}`)
+      .join("\n");
+    const prompt = [
+      "Você é o atendente de um helpdesk.",
+      "Não há artigos publicados.",
+      "Responda em português, em um parágrafo curto, a partir do assunto e da conversa abaixo.",
+      "",
+      `Assunto: ${subject}`,
+      "Conversa:",
+      history,
+    ].join("\n");
+    return this.complete(prompt);
+  }
+
+  private async complete(prompt: string) {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) {
+      throw new BadRequestException("Falta a chave OPENAI_API_KEY no .env");
+    }
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {

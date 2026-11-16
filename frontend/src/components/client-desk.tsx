@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "../lib/api";
 import { AppSkeleton, QueueSkeleton, TicketPaneSkeleton } from "./skeleton";
@@ -72,14 +72,35 @@ function formatWhen(value: string) {
 }
 
 function normalize(ticket: Ticket): Ticket {
+  const messages = Array.isArray(ticket.messages) ? ticket.messages : [];
   return {
     ...ticket,
-    messages: [...ticket.messages].sort(
+    messages: [...messages].sort(
       (a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() ||
         a.id - b.id,
     ),
   };
+}
+
+function latestMessageId(ticket: Ticket) {
+  return ticket.messages.reduce((max, message) => Math.max(max, message.id), 0);
+}
+
+function mergeTickets(current: Ticket[], incoming: Ticket[]) {
+  const byId = new Map(current.map((ticket) => [ticket.id, ticket]));
+  for (const ticket of incoming) {
+    const local = byId.get(ticket.id);
+    const next = normalize(ticket);
+    byId.set(
+      ticket.id,
+      local && latestMessageId(local) > latestMessageId(next) ? local : next,
+    );
+  }
+  return [...byId.values()].sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 }
 
 export function ClientDesk() {
@@ -96,6 +117,7 @@ export function ClientDesk() {
   const [opening, setOpening] = useState("");
   const [draft, setDraft] = useState("");
   const [pane, setPane] = useState<"fila" | "chamado">("fila");
+  const threadRef = useRef<HTMLOListElement>(null);
 
   useEffect(() => {
     const current = readSession();
@@ -114,27 +136,39 @@ export function ClientDesk() {
   useEffect(() => {
     if (!checked || !session) return;
     let cancelled = false;
-    api<Ticket[]>("/tickets")
-      .then((data) => {
+    const userId = session.user.id;
+
+    async function load(initial: boolean) {
+      try {
+        const data = await api<Ticket[]>("/tickets");
         if (cancelled) return;
         const mine = data
-          .filter((ticket) => ticket.openerId === session.user.id)
-          .map(normalize)
-          .sort(
-            (a, b) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          .filter((ticket) => ticket.openerId === userId)
+          .map(normalize);
+        if (initial) {
+          setTickets(mine);
+          setSelectedId(mine[0]?.id ?? null);
+          setLoading(false);
+          return;
+        }
+        setTickets((current) => mergeTickets(current, mine));
+      } catch (caught) {
+        if (!cancelled && initial) {
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : "Não foi possível falar com o servidor.",
           );
-        setTickets(mine);
-        setSelectedId(mine[0]?.id ?? null);
-      })
-      .catch((caught: Error) => {
-        if (!cancelled) setError(caught.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+          setLoading(false);
+        }
+      }
+    }
+
+    void load(true);
+    const timer = window.setInterval(() => void load(false), 3000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [checked, session]);
 
@@ -206,21 +240,29 @@ export function ClientDesk() {
     const selected = tickets.find((ticket) => ticket.id === selectedId);
     if (!body || !selected || busy) return;
     void run(async () => {
-      const ticket = await api<Ticket>(`/tickets/${selected.id}/messages`, {
+      await api<Ticket>(`/tickets/${selected.id}/messages`, {
         method: "POST",
         body: JSON.stringify({ message: body }),
       });
+      const ticket = await api<Ticket>(`/tickets/${selected.id}`);
       replace(ticket);
       setDraft("");
     });
   }
 
+  const selected =
+    tickets.find((ticket) => ticket.id === selectedId) ?? tickets[0] ?? null;
+  const threadEnd = selected?.messages.at(-1)?.id ?? null;
+
+  useEffect(() => {
+    const node = threadRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [threadEnd, selected?.id]);
+
   if (!checked || !session) {
     return <AppSkeleton />;
   }
-
-  const selected =
-    tickets.find((ticket) => ticket.id === selectedId) ?? tickets[0] ?? null;
 
   return (
     <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-paper text-ink">
@@ -382,7 +424,10 @@ export function ClientDesk() {
                   <StatusMark status={selected.status} />
                 </span>
               </header>
-              <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-6">
+              <ol
+                ref={threadRef}
+                className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-6"
+              >
                 {selected.messages.map((message) => {
                   const fromAgent = message.author === "atendente";
                   const fromAi = message.author === "ia";
@@ -451,7 +496,7 @@ function ClientAction({
   onDraft: (value: string) => void;
   onReply: (event: FormEvent) => void;
 }) {
-  if (status === "AGUARDANDO_CLIENTE") {
+  if (status !== "RESOLVIDO" && status !== "COM_IA") {
     return (
       <form
         onSubmit={onReply}
@@ -483,11 +528,7 @@ function ClientAction({
   const note =
     status === "RESOLVIDO"
       ? "Este chamado está encerrado."
-      : status === "NA_FILA"
-        ? "Seu chamado está na fila. Um atendente vai assumir."
-        : status === "EM_ATENDIMENTO"
-          ? "Um atendente está com o seu chamado."
-          : "Estamos recebendo o seu chamado.";
+      : "Estamos recebendo o seu chamado.";
 
   return (
     <div className="border-t border-line bg-[#ebe4d8] px-4 py-4 text-sm text-muted sm:px-6">
