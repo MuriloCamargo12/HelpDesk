@@ -59,7 +59,7 @@ Rodar o seed de novo não duplica o atendente. Se a conta já existe, o seed dev
 
 `/` é a mesa. A coluna da esquerda é a fila, com filtros Abertos, Novos, Resolvidos e Todos, e três contagens. O centro é o chamado. A direita é a base de artigos. No celular as três viram abas.
 
-`/cliente` lista os chamados da pessoa logada, abre um novo e deixa responder quando o status é "Aguardando você".
+`/cliente` lista os chamados da pessoa logada, abre um novo e deixa escrever de novo enquanto o chamado não está encerrado.
 
 Sair apaga a sessão e volta ao login.
 
@@ -82,8 +82,8 @@ O fluxo normal:
 2. A IA lê só os artigos publicados. Se escrever uma resposta, ela é salva como `ia` e o status vai para `AGUARDANDO_CLIENTE`.
 3. Se a IA responder exatamente "Não sei responder com a base publicada.", ou se a chamada falhar, nenhuma mensagem da IA é salva e o status vai para `NA_FILA`. O chamado já estava no banco, então essa falha não devolve erro 500.
 4. O atendente assume a partir de `NOVO` ou `NA_FILA`. O status vai para `EM_ATENDIMENTO`. Com token de atendente, o `assigneeId` guarda quem assumiu. Cliente logado recebe 403.
-5. Em `EM_ATENDIMENTO` o atendente responde. A mensagem fica como `atendente` e o status vai para `AGUARDANDO_CLIENTE`. "Sugerir" só preenche a caixa. Não grava nada.
-6. O cliente responde por `POST /tickets/:id/messages`. O status volta para `EM_ATENDIMENTO`.
+5. Em `EM_ATENDIMENTO` ou `AGUARDANDO_CLIENTE` o atendente pode mandar quantas mensagens quiser. Cada uma fica como `atendente` e o status vai para `AGUARDANDO_CLIENTE`. "Sugerir" só preenche a caixa. Não grava nada.
+6. O cliente também escreve nesses dois status, e ainda em `NA_FILA`, por `POST /tickets/:id/messages`. Se o status era `AGUARDANDO_CLIENTE`, volta para `EM_ATENDIMENTO`. Chamado resolvido não aceita mensagem nova.
 7. Resolver só sai de `EM_ATENDIMENTO` ou `AGUARDANDO_CLIENTE`.
 
 As três contagens da mesa:
@@ -108,7 +108,7 @@ Os dois últimos grupos não se misturam. Um chamado resolvido sai de Abertos e 
 
 **Login devolve um JWT de 7 dias.** O corpo do token é o id (`sub`) e o papel. O segredo é lido do `.env` na hora de assinar e na hora de verificar, não fica gravado na configuração do módulo. Sem `JWT_SECRET`, login e leitura do token falham com uma mensagem clara.
 
-**A base publicada é a única fonte da IA.** `GET /articles` devolve só o que está publicado. A mesa pede `GET /articles?all=1` para também mostrar os despublicados. A IA usa a lista publicada. O modelo é `gpt-4o-mini`. O prompt pede um parágrafo curto em português e, quando nenhum artigo responde, a frase exata que manda o chamado para a fila. "Sugerir" reutiliza esse mesmo rascunho, só que devolve o texto para a caixa do atendente.
+**A base publicada é a fonte da resposta automática.** `GET /articles` devolve só o que está publicado. A mesa pede `GET /articles?all=1` para também mostrar os despublicados. Ao abrir um chamado, a IA usa a lista publicada. O modelo é `gpt-4o-mini`. O prompt pede um parágrafo curto em português e, quando nenhum artigo responde ou a base está vazia, a frase exata que manda o chamado para a fila. "Sugerir" devolve o texto para a caixa e não grava. Com artigos publicados, usa a mesma base. Com a base vazia, redige a partir do assunto e da conversa.
 
 **Validação na borda.** Um `ValidationPipe` global descarta campo desconhecido e transforma o corpo. Os DTOs de cadastro, login, chamado e artigo declaram o que cada rota aceita. Email é aparado e passado para minúsculas. Senha tem no mínimo 6 caracteres e não é aparada, para não mudar o que a pessoa digitou.
 

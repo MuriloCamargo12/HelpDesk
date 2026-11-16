@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArticlesColumn } from "./articles-column";
 import {
@@ -32,6 +32,7 @@ type Ticket = {
   subject: string;
   status: Status;
   createdAt: string;
+  opener: { name: string } | null;
   messages: Message[];
 };
 
@@ -77,7 +78,12 @@ type Filter = (typeof filters)[number];
 function matches(ticket: Ticket, filter: Filter) {
   if (filter === "Todos") return true;
   if (filter === "Resolvidos") return ticket.status === "RESOLVIDO";
-  if (filter === "Novos") return ticket.status === "NOVO";
+  if (filter === "Novos") {
+    return (
+      ticket.status !== "RESOLVIDO" &&
+      !ticket.messages.some((message) => message.author === "atendente")
+    );
+  }
   return ticket.status !== "RESOLVIDO";
 }
 
@@ -92,15 +98,43 @@ function formatWhen(value: string) {
   }).format(date);
 }
 
+function openerName(ticket: Ticket) {
+  const name = ticket.opener?.name?.trim();
+  return name ? name : null;
+}
+
 function normalize(ticket: Ticket): Ticket {
+  const messages = Array.isArray(ticket.messages) ? ticket.messages : [];
+  const name = openerName(ticket);
   return {
     ...ticket,
-    messages: [...ticket.messages].sort(
+    opener: name ? { name } : null,
+    messages: [...messages].sort(
       (a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() ||
         a.id - b.id,
     ),
   };
+}
+
+function latestMessageId(ticket: Ticket) {
+  return ticket.messages.reduce((max, message) => Math.max(max, message.id), 0);
+}
+
+function mergeTickets(current: Ticket[], incoming: Ticket[]) {
+  const byId = new Map(current.map((ticket) => [ticket.id, ticket]));
+  for (const ticket of incoming) {
+    const local = byId.get(ticket.id);
+    const next = normalize(ticket);
+    byId.set(
+      ticket.id,
+      local && latestMessageId(local) > latestMessageId(next) ? local : next,
+    );
+  }
+  return [...byId.values()].sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 }
 
 export function Desk() {
@@ -119,6 +153,7 @@ export function Desk() {
   const [error, setError] = useState("");
   const [pane, setPane] = useState<"fila" | "chamado" | "base">("fila");
   const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const threadRef = useRef<HTMLOListElement>(null);
 
   useEffect(() => {
     const current = readSession();
@@ -137,23 +172,38 @@ export function Desk() {
   useEffect(() => {
     if (!checked) return;
     let cancelled = false;
-    api<Ticket[]>("/tickets")
-      .then((data) => {
+
+    async function load(initial: boolean) {
+      try {
+        const data = await api<Ticket[]>("/tickets");
         if (cancelled) return;
         const next = data.map(normalize);
-        setTickets(next);
-        const first =
-          next.find((ticket) => ticket.status !== "RESOLVIDO") ?? next[0];
-        setSelectedId(first?.id ?? null);
-      })
-      .catch((caught: Error) => {
-        if (!cancelled) setError(caught.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+        if (initial) {
+          setTickets(next);
+          const first =
+            next.find((ticket) => ticket.status !== "RESOLVIDO") ?? next[0];
+          setSelectedId(first?.id ?? null);
+          setLoading(false);
+          return;
+        }
+        setTickets((current) => mergeTickets(current, next));
+      } catch (caught) {
+        if (!cancelled && initial) {
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : "Não foi possível falar com o servidor.",
+          );
+          setLoading(false);
+        }
+      }
+    }
+
+    void load(true);
+    const timer = window.setInterval(() => void load(false), 3000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [checked]);
 
@@ -174,6 +224,13 @@ export function Desk() {
   );
   const selected =
     visible.find((ticket) => ticket.id === selectedId) ?? visible[0] ?? null;
+  const threadEnd = selected?.messages.at(-1)?.id ?? null;
+
+  useEffect(() => {
+    const node = threadRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [threadEnd, selected?.id]);
 
   function select(id: number) {
     setSelectedId(id);
@@ -220,10 +277,11 @@ export function Desk() {
     const body = draft.trim();
     if (!body || !selected || busy) return;
     void run(async () => {
-      const ticket = await api<Ticket>(`/tickets/${selected.id}/reply`, {
+      await api<Ticket>(`/tickets/${selected.id}/reply`, {
         method: "POST",
         body: JSON.stringify({ message: body }),
       });
+      const ticket = await api<Ticket>(`/tickets/${selected.id}`);
       replace(ticket);
       setDraft("");
     });
@@ -402,7 +460,9 @@ export function Desk() {
                   >
                     <span className="flex items-center justify-between gap-3 text-[12px] text-[#c8bfb2]">
                       <span className="truncate">
-                        {formatWhen(ticket.createdAt)}
+                        {openerName(ticket)
+                          ? `${openerName(ticket)} · ${formatWhen(ticket.createdAt)}`
+                          : formatWhen(ticket.createdAt)}
                       </span>
                       <span className="shrink-0">#{ticket.id}</span>
                     </span>
@@ -475,7 +535,9 @@ export function Desk() {
             <header className="flex min-h-28 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-3 sm:px-6">
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] text-muted">
-                  #{selected.id} · aberto {formatWhen(selected.createdAt)}
+                  #{selected.id}
+                  {openerName(selected) ? ` · ${openerName(selected)}` : ""} · aberto{" "}
+                  {formatWhen(selected.createdAt)}
                 </p>
                 <h2 className="mt-1 truncate font-serif text-[26px] leading-tight sm:text-[30px]">
                   {selected.subject}
@@ -486,7 +548,10 @@ export function Desk() {
               </span>
             </header>
 
-            <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-6">
+            <ol
+              ref={threadRef}
+              className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-6"
+            >
               {selected.messages.map((message) => {
                 const fromAgent = message.author === "atendente";
                 const fromAi = message.author === "ia";
@@ -494,7 +559,9 @@ export function Desk() {
                   ? "Atendente"
                   : fromAi
                     ? "IA"
-                    : "Cliente";
+                    : openerName(selected)
+                      ? `Cliente · ${openerName(selected)}`
+                      : "Cliente";
                 return (
                   <li
                     key={message.id}
@@ -595,7 +662,7 @@ function DeskAction({
     );
   }
 
-  if (status === "EM_ATENDIMENTO") {
+  if (status === "EM_ATENDIMENTO" || status === "AGUARDANDO_CLIENTE") {
     return (
       <form
         onSubmit={onReply}
@@ -639,27 +706,6 @@ function DeskAction({
           </div>
         </div>
       </form>
-    );
-  }
-
-  if (status === "AGUARDANDO_CLIENTE") {
-    return (
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-[#ebe4d8] px-4 py-3 sm:px-6">
-        <p className="min-w-0 flex-1 text-sm text-muted">
-          Aguardando o cliente. A resposta já foi enviada.
-          {error ? (
-            <span className="mt-1 block break-words text-mark">{error}</span>
-          ) : null}
-        </p>
-        <button
-          type="button"
-          onClick={onResolve}
-          disabled={busy}
-          className="shrink-0 cursor-pointer rounded-md bg-ink px-3 py-1.5 text-sm text-paper transition-colors hover:bg-[#322c26] disabled:opacity-50"
-        >
-          Resolver
-        </button>
-      </div>
     );
   }
 

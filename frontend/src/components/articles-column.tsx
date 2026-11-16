@@ -1,9 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { api } from "../lib/api";
 import { ArticleListSkeleton } from "./skeleton";
-
-const API = "http://localhost:4000";
 
 type Article = {
   id: number;
@@ -12,28 +11,6 @@ type Article = {
   published: boolean;
   createdAt: string;
 };
-
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as {
-      message?: string | string[];
-    } | null;
-    const message = payload?.message;
-    throw new Error(
-      Array.isArray(message)
-        ? message.join(" ")
-        : message || "Não foi possível falar com o servidor.",
-    );
-  }
-  return response.json() as Promise<T>;
-}
 
 export function ArticlesColumn({ shown = true }: { shown?: boolean }) {
   const [articles, setArticles] = useState<Article[]>([]);
@@ -131,9 +108,13 @@ export function ArticlesColumn({ shown = true }: { shown?: boolean }) {
                 type="button"
                 onClick={() => toggle(article)}
                 disabled={busy}
-                className="mt-2 cursor-pointer rounded-md border border-line bg-white px-2 py-1 text-[13px] text-ink transition-colors hover:bg-[#f3efe7] disabled:opacity-50"
+                className={
+                  article.published
+                    ? "mt-2 cursor-pointer rounded-md border border-[#b7d4c2] bg-[#e3f0e7] px-2 py-1 text-[13px] text-[#1d4a34] transition-colors hover:bg-[#d5e7dc] disabled:opacity-50"
+                    : "mt-2 cursor-pointer rounded-md border border-[#e3c3b6] bg-[#f8ebe6] px-2 py-1 text-[13px] text-mark transition-colors hover:bg-[#f3ddd6] disabled:opacity-50"
+                }
               >
-                {article.published ? "Despublicar" : "Republicar"}
+                {article.published ? "Publicado" : "Despublicar"}
               </button>
             </li>
           ))
